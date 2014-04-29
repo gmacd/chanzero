@@ -109,26 +109,35 @@ func importPage(path string) *page {
 
 // Given a root page, export the entire site.
 func exportSite(rootSrc string) {
+	rootFile := filepath.Base(rootSrc)
+	rootSrcPath := filepath.Dir(rootSrc)
+	destSrcPath := filepath.Dir(rootSrcPath)
+
 	exportedPages := set.NewSetOfValues()
-	exportPage(rootSrc, exportedPages)
+	exportPage(rootFile, rootSrcPath, destSrcPath, exportedPages)
 }
 
-func exportPage(srcPath string, previouslyExportedPaths *set.Set) {
-	if !previouslyExportedPaths.Contains(srcPath) {
-		fmt.Println(" Exporting page", srcPath)
+func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExportedPaths *set.Set) {
+	if !previouslyExportedPaths.Contains(pageSrcPath) {
+		previouslyExportedPaths.Add(pageSrcPath)
 
-		previouslyExportedPaths.Add(srcPath)
+		fullSrcPath := rootSrcPath + "/" + pageSrcPath
+		fullDestPath := destSrcPath + "/" + replaceExtension(pageSrcPath, "html")
+		fmt.Println(" Exporting page  src:", fullSrcPath)
+		fmt.Println("                dest:", fullDestPath)
 
-		page := importPage(srcRoot)
+		page := importPage(fullSrcPath)
 
-		destPath := replaceExtension(srcPath, "html")
-		ioutil.WriteFile(destPath, page.html, 0644)
+		// Ensure destination exists
+		os.MkdirAll(filepath.Dir(fullDestPath), 0755)
+
+		ioutil.WriteFile(fullDestPath, page.html, 0644)
 
 		// Export referenced pages
 		for _, linkUrl := range page.linkedUrls {
 			linkSrc := replaceExtension(linkUrl, "md")
 
-			exportPage(linkSrc, previouslyExportedPaths)
+			exportPage(linkSrc, rootSrcPath, destSrcPath, previouslyExportedPaths)
 		}
 	}
 }
