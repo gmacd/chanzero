@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"github.com/gmacd/container/set"
 	"github.com/russross/blackfriday"
 	"io/ioutil"
 	"os"
@@ -29,24 +30,26 @@ func main() {
 
 	fmt.Println("Building site with root", srcRoot)
 
-	site := importSite(srcRoot)
-	exportSite(site)
+	exportSite(srcRoot)
 }
 
 type page struct {
-	srcPath string
-	html    []byte
+	srcPath    string
+	html       []byte
+	linkedUrls []string
 }
 
 func NewPage(path string) *page {
-	return &page{path, nil}
+	return &page{path, nil, make([]string, 0)}
 }
 
-// Return export filepath for given page.
-// TODO Assumes md - not error checking!
-func (page *page) destPath() string {
-	basePath := strings.TrimSuffix(page.srcPath, filepath.Ext(page.srcPath))
-	return basePath + ".html"
+func (page *page) AddLink(url string) {
+	page.linkedUrls = append(page.linkedUrls, url)
+}
+
+func replaceExtension(path, newExtention string) string {
+	basePath := strings.TrimSuffix(path, filepath.Ext(path))
+	return basePath + "." + newExtention
 }
 
 // Wrapped HtmlRenderer which gathers all links in markdown
@@ -54,30 +57,26 @@ func (page *page) destPath() string {
 type LinkGatheringHtmlRenderer struct {
 	*blackfriday.Html
 
-	linkedUrls []string
+	page *page
 }
 
-func NewLinkGatheringHtmlRenderer(renderer blackfriday.Renderer) *LinkGatheringHtmlRenderer {
-	return &LinkGatheringHtmlRenderer{renderer.(*blackfriday.Html), make([]string, 0)}
-}
-
-func (html *LinkGatheringHtmlRenderer) AddLink(url string) {
-	html.linkedUrls = append(html.linkedUrls, url)
+func NewLinkGatheringHtmlRenderer(renderer blackfriday.Renderer, page *page) *LinkGatheringHtmlRenderer {
+	return &LinkGatheringHtmlRenderer{renderer.(*blackfriday.Html), page}
 }
 
 func (html *LinkGatheringHtmlRenderer) AutoLink(out *bytes.Buffer, link []byte, kind int) {
-	html.AddLink(string(link))
+	html.page.AddLink(string(link))
 	html.Html.AutoLink(out, link, kind)
 }
 
 func (html *LinkGatheringHtmlRenderer) Link(out *bytes.Buffer, link []byte, title []byte, content []byte) {
-	html.AddLink(string(link))
+	html.page.AddLink(string(link))
 	html.Html.Link(out, link, title, content)
 }
 
 // Given a single root page, load the page and follow all local src links,
 // loading each page recursively, linked to the root.
-func importSite(path string) *page {
+func importPage(path string) *page {
 	page := NewPage(path)
 
 	mdsrc, err := ioutil.ReadFile(path)
@@ -92,7 +91,7 @@ func importSite(path string) *page {
 	htmlFlags |= blackfriday.HTML_SMARTYPANTS_LATEX_DASHES
 	renderer := blackfriday.HtmlRenderer(htmlFlags, "", "")
 
-	linkGatheringRenderer := NewLinkGatheringHtmlRenderer(renderer)
+	linkGatheringRenderer := NewLinkGatheringHtmlRenderer(renderer, page)
 
 	extensions := 0
 	//extensions |= blackfriday.EXTENSION_NO_INTRA_EMPHASIS
@@ -105,15 +104,31 @@ func importSite(path string) *page {
 
 	page.html = blackfriday.Markdown(mdsrc, linkGatheringRenderer, extensions)
 
-	fmt.Println("URLs:")
-	for _, url := range linkGatheringRenderer.linkedUrls {
-		fmt.Println(url)
-	}
-
 	return page
 }
 
 // Given a root page, export the entire site.
-func exportSite(page *page) {
-	ioutil.WriteFile(page.destPath(), page.html, 0x644)
+func exportSite(rootSrc string) {
+	exportedPages := set.NewSetOfValues()
+	exportPage(rootSrc, exportedPages)
+}
+
+func exportPage(srcPath string, previouslyExportedPaths *set.Set) {
+	if !previouslyExportedPaths.Contains(srcPath) {
+		fmt.Println(" Exporting page", srcPath)
+
+		previouslyExportedPaths.Add(srcPath)
+
+		page := importPage(srcRoot)
+
+		destPath := replaceExtension(srcPath, "html")
+		ioutil.WriteFile(destPath, page.html, 0644)
+
+		// Export referenced pages
+		for _, linkUrl := range page.linkedUrls {
+			linkSrc := replaceExtension(linkUrl, "md")
+
+			exportPage(linkSrc, previouslyExportedPaths)
+		}
+	}
 }
