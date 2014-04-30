@@ -35,12 +35,13 @@ func main() {
 
 type page struct {
 	srcPath    string
+	destPath   string
 	html       []byte
 	linkedUrls []string
 }
 
-func NewPage(path string) *page {
-	return &page{path, nil, make([]string, 0)}
+func NewPage(srcPath, destPath string) *page {
+	return &page{srcPath, destPath, nil, make([]string, 0)}
 }
 
 func (page *page) AddLink(url string) {
@@ -76,12 +77,10 @@ func (html *LinkGatheringHtmlRenderer) Link(out *bytes.Buffer, link []byte, titl
 
 // Given a single root page, load the page and follow all local src links,
 // loading each page recursively, linked to the root.
-func importPage(path string) *page {
-	page := NewPage(path)
-
-	mdsrc, err := ioutil.ReadFile(path)
+func (page *page) importPage() {
+	mdsrc, err := ioutil.ReadFile(page.srcPath)
 	if err != nil {
-		fmt.Printf("Couldn't load \"%v\": %v\n", path, err.Error())
+		fmt.Printf("Couldn't load \"%v\": %v\n", page.srcPath, err.Error())
 	}
 
 	// Set up a 'common' converter
@@ -103,8 +102,6 @@ func importPage(path string) *page {
 	extensions |= blackfriday.EXTENSION_HEADER_IDS
 
 	page.html = blackfriday.Markdown(mdsrc, linkGatheringRenderer, extensions)
-
-	return page
 }
 
 // Given a root page, export the entire site.
@@ -121,17 +118,19 @@ func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExported
 	if !previouslyExportedPaths.Contains(pageSrcPath) {
 		previouslyExportedPaths.Add(pageSrcPath)
 
-		fullSrcPath := rootSrcPath + "/" + pageSrcPath
-		fullDestPath := destSrcPath + "/" + replaceExtension(pageSrcPath, "html")
-		fmt.Println(" Exporting page  src:", fullSrcPath)
-		fmt.Println("                dest:", fullDestPath)
+		page := NewPage(
+			rootSrcPath+"/"+pageSrcPath,
+			destSrcPath+"/"+replaceExtension(pageSrcPath, "html"))
 
-		page := importPage(fullSrcPath)
+		fmt.Println(" Exporting page  src:", page.srcPath)
+		fmt.Println("                dest:", page.destPath)
+
+		page.importPage()
 
 		// Ensure destination exists
-		os.MkdirAll(filepath.Dir(fullDestPath), 0755)
+		os.MkdirAll(filepath.Dir(page.destPath), 0755)
 
-		ioutil.WriteFile(fullDestPath, page.html, 0644)
+		ioutil.WriteFile(page.destPath, page.html, 0644)
 
 		// Export referenced pages
 		for _, linkUrl := range page.linkedUrls {
