@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/gmacd/container/set"
@@ -9,15 +10,21 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 var (
 	srcRoot string
+
+	pageSplitterRegex *regexp.Regexp
 )
 
 func main() {
 	fmt.Println("..chanzero..")
+
+	// Split on at least 3 '/'
+	pageSplitterRegex = regexp.MustCompile(`[/]{3,}`)
 
 	// TODO Specfiy output folder
 	flag.StringVar(&srcRoot, "src", "", "Path to root src file for site to build.")
@@ -82,6 +89,13 @@ func (page *page) importPage() {
 	if err != nil {
 		fmt.Printf("Couldn't load \"%v\": %v\n", page.srcPath, err.Error())
 	}
+
+	strs := pageSplitterRegex.Split(string(mdsrc), -1)
+	fmt.Println(len(strs))
+
+	var f interface{}
+	err = json.Unmarshal([]byte(strs[0]), &f)
+	fmt.Println(f)
 
 	// Set up a 'common' converter
 	htmlFlags := 0
