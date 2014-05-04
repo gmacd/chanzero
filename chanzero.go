@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/gmacd/container/set"
@@ -16,12 +15,13 @@ import (
 
 var (
 	srcRoot string
+	cssPath string
 
 	pageSplitterRegex *regexp.Regexp
 )
 
 func main() {
-	fmt.Println("..chanzero..")
+	fmt.Printf("\n...chanzero...\n\n")
 
 	// Split on at least 3 '/'
 	pageSplitterRegex = regexp.MustCompile(`[/]{3,}`)
@@ -35,7 +35,7 @@ func main() {
 		os.Exit(-1)
 	}
 
-	fmt.Println("Building site with root", srcRoot)
+	fmt.Printf("Building site with root: %v\n\n", srcRoot)
 
 	exportSite(srcRoot)
 }
@@ -45,10 +45,11 @@ type page struct {
 	destPath   string
 	html       []byte
 	linkedUrls []string
+	settings   map[string]string
 }
 
 func NewPage(srcPath, destPath string) *page {
-	return &page{srcPath, destPath, nil, make([]string, 0)}
+	return &page{srcPath, destPath, nil, make([]string, 0), make(map[string]string)}
 }
 
 func (page *page) AddLink(url string) {
@@ -85,24 +86,27 @@ func (html *LinkGatheringHtmlRenderer) Link(out *bytes.Buffer, link []byte, titl
 // Given a single root page, load the page and follow all local src links,
 // loading each page recursively, linked to the root.
 func (page *page) importPage() {
-	mdsrc, err := ioutil.ReadFile(page.srcPath)
+	fileContents, err := ioutil.ReadFile(page.srcPath)
 	if err != nil {
 		fmt.Printf("Couldn't load \"%v\": %v\n", page.srcPath, err.Error())
 	}
 
-	strs := pageSplitterRegex.Split(string(mdsrc), -1)
-	fmt.Println(len(strs))
-
-	var f interface{}
-	err = json.Unmarshal([]byte(strs[0]), &f)
-	fmt.Println(f)
+	mdsrc := fileContents
+	strs := pageSplitterRegex.Split(string(fileContents), -1)
+	if len(strs) > 1 {
+		parseSettings(strs[0], page.settings)
+		handleGlobalSettings(page.settings)
+		mdsrc = []byte(strs[1])
+	}
 
 	// Set up a 'common' converter
 	htmlFlags := 0
 	htmlFlags |= blackfriday.HTML_USE_SMARTYPANTS
 	htmlFlags |= blackfriday.HTML_SMARTYPANTS_FRACTIONS
 	htmlFlags |= blackfriday.HTML_SMARTYPANTS_LATEX_DASHES
-	renderer := blackfriday.HtmlRenderer(htmlFlags, "", "")
+	htmlFlags |= blackfriday.HTML_COMPLETE_PAGE
+	title := page.settings["Title"]
+	renderer := blackfriday.HtmlRenderer(htmlFlags, title, cssPath)
 
 	linkGatheringRenderer := NewLinkGatheringHtmlRenderer(renderer, page)
 
@@ -136,8 +140,8 @@ func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExported
 			rootSrcPath+"/"+pageSrcPath,
 			destSrcPath+"/"+replaceExtension(pageSrcPath, "html"))
 
-		fmt.Println(" Exporting page  src:", page.srcPath)
-		fmt.Println("                dest:", page.destPath)
+		fmt.Printf(" Exporting page  src: %v\n", page.srcPath)
+		fmt.Printf("                dest: %v\n\n", page.destPath)
 
 		page.importPage()
 
@@ -146,11 +150,35 @@ func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExported
 
 		ioutil.WriteFile(page.destPath, page.html, 0644)
 
-		// Export referenced pages
+		// Export local, valid markdown links
 		for _, linkUrl := range page.linkedUrls {
 			linkSrc := replaceExtension(linkUrl, "md")
 
-			exportPage(linkSrc, rootSrcPath, destSrcPath, previouslyExportedPaths)
+			if canOpen(rootSrcPath + "/" + linkSrc) {
+				exportPage(linkSrc, rootSrcPath, destSrcPath, previouslyExportedPaths)
+			}
 		}
 	}
+}
+
+func parseSettings(str string, settings map[string]string) {
+	for _, line := range strings.Split(str, "\n") {
+		tokens := strings.SplitN(line, ":", 2)
+		if len(tokens) == 2 {
+			key := strings.TrimSpace(tokens[0])
+			value := strings.TrimSpace(tokens[1])
+			settings[key] = value
+		}
+	}
+}
+
+func handleGlobalSettings(pageSettings map[string]string) {
+	if value, ok := pageSettings["SiteCss"]; ok {
+		cssPath = value
+	}
+}
+
+func canOpen(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
