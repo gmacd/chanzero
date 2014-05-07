@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/gmacd/container/set"
 	"github.com/russross/blackfriday"
+	"html/template"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -13,6 +13,25 @@ import (
 	"strings"
 )
 
+// Simple set
+type Set struct {
+	items map[interface{}]struct{}
+}
+
+func NewSet() *Set {
+	return &Set{make(map[interface{}]struct{}, 0)}
+}
+
+func (set *Set) Add(item interface{}) {
+	set.items[item] = struct{}{}
+}
+
+func (set *Set) Contains(item interface{}) bool {
+	_, ok := set.items[item]
+	return ok
+}
+
+// Globals
 var (
 	srcRoot string
 	cssPath string
@@ -118,6 +137,7 @@ func (page *page) importPage() {
 	extensions |= blackfriday.EXTENSION_STRIKETHROUGH
 	extensions |= blackfriday.EXTENSION_SPACE_HEADERS
 	extensions |= blackfriday.EXTENSION_HEADER_IDS
+	extensions |= blackfriday.EXTENSION_HARD_LINE_BREAK
 
 	page.html = blackfriday.Markdown(mdsrc, linkGatheringRenderer, extensions)
 }
@@ -128,11 +148,16 @@ func exportSite(rootSrc string) {
 	rootSrcPath := filepath.Dir(rootSrc)
 	destSrcPath := filepath.Dir(rootSrcPath)
 
-	exportedPages := set.NewSetOfValues()
+	exportedPages := NewSet()
 	exportPage(rootFile, rootSrcPath, destSrcPath, exportedPages)
 }
 
-func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExportedPaths *set.Set) {
+// TEMP
+type Foo struct {
+	Title string
+}
+
+func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExportedPaths *Set) {
 	if !previouslyExportedPaths.Contains(pageSrcPath) {
 		previouslyExportedPaths.Add(pageSrcPath)
 
@@ -143,12 +168,26 @@ func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExported
 		fmt.Printf(" Exporting page  src: %v\n", page.srcPath)
 		fmt.Printf("                dest: %v\n\n", page.destPath)
 
-		page.importPage()
-
 		// Ensure destination exists
 		os.MkdirAll(filepath.Dir(page.destPath), 0755)
 
-		ioutil.WriteFile(page.destPath, page.html, 0644)
+		page.importPage()
+
+		// Prepare exported HTML as a template
+		template, err := template.New("page").Parse(string(page.html))
+		if err != nil {
+			fmt.Println("Couldn't parse file.  ", err.Error())
+			return
+		}
+
+		// Expand any templates and write out the file
+		file, err := os.Create(page.destPath)
+		if err != nil {
+			fmt.Println("Couldn't write to file.  ", err.Error())
+			return
+		}
+		defer file.Close()
+		template.Execute(file, &Foo{"foo"})
 
 		// Export local, valid markdown links
 		for _, linkUrl := range page.linkedUrls {
