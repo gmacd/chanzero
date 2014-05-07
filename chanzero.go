@@ -37,7 +37,7 @@ func main() {
 		os.Exit(-1)
 	}
 
-	fmt.Printf("Building site with root: %v\n\n", srcRoot)
+	fmt.Printf("Building site with root: %v\n", srcRoot)
 
 	exportSite(srcRoot)
 }
@@ -56,6 +56,11 @@ func NewPage(srcPath, destPath string) *page {
 
 func (page *page) AddLink(url string) {
 	page.linkedUrls = append(page.linkedUrls, url)
+}
+
+func (page *page) IsDraft() bool {
+	value, ok := page.settings["Draft"]
+	return ok && value == "true"
 }
 
 func replaceExtension(path, newExtention string) string {
@@ -148,13 +153,17 @@ func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExported
 			rootSrcPath+"/"+pageSrcPath,
 			destSrcPath+"/"+replaceExtension(pageSrcPath, "html"))
 
-		fmt.Printf(" Exporting page  src: %v\n", page.srcPath)
-		fmt.Printf("                dest: %v\n\n", page.destPath)
+		fmt.Printf("\n Exporting page  src: %v\n", page.srcPath)
+		fmt.Printf("                dest: %v\n", page.destPath)
 
 		// Ensure destination exists
 		os.MkdirAll(filepath.Dir(page.destPath), 0755)
 
 		page.importPage()
+		if page.IsDraft() {
+			fmt.Println("   [Skipping draft]")
+			return
+		}
 
 		// Prepare exported HTML as a template
 		template, err := template.New("page").Parse(string(page.html))
