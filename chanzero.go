@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"github.com/gmacd/container/set"
 	"github.com/russross/blackfriday"
 	"html/template"
 	"io/ioutil"
@@ -12,24 +13,6 @@ import (
 	"regexp"
 	"strings"
 )
-
-// Simple set
-type Set struct {
-	items map[interface{}]struct{}
-}
-
-func NewSet() *Set {
-	return &Set{make(map[interface{}]struct{}, 0)}
-}
-
-func (set *Set) Add(item interface{}) {
-	set.items[item] = struct{}{}
-}
-
-func (set *Set) Contains(item interface{}) bool {
-	_, ok := set.items[item]
-	return ok
-}
 
 // Globals
 var (
@@ -148,7 +131,7 @@ func exportSite(rootSrc string) {
 	rootSrcPath := filepath.Dir(rootSrc)
 	destSrcPath := filepath.Dir(rootSrcPath)
 
-	exportedPages := NewSet()
+	exportedPages := set.NewSetOfValues()
 	exportPage(rootFile, rootSrcPath, destSrcPath, exportedPages)
 }
 
@@ -157,7 +140,7 @@ type Foo struct {
 	Title string
 }
 
-func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExportedPaths *Set) {
+func exportPage(pageSrcPath, rootSrcPath, destSrcPath string, previouslyExportedPaths *set.Set) {
 	if !previouslyExportedPaths.Contains(pageSrcPath) {
 		previouslyExportedPaths.Add(pageSrcPath)
 
